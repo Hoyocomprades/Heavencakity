@@ -3,6 +3,7 @@ from discord.ext import tasks
 import asyncio
 import os
 import io
+import logging
 from keep_alive import keep_alive  # Import the keep_alive function
 
 # Load environment variable securely (assuming .env file exists)
@@ -21,6 +22,9 @@ DESTINATION_CHANNEL_IDS = [
     1248574132417724518,
     1248623054226067577
 ]
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
 
 class ForwardingBot(discord.Client):
 
@@ -46,11 +50,14 @@ class ForwardingBot(discord.Client):
                     if message.id not in self.forwarded_messages:  # Check if message has already been forwarded
                         if content:
                             forwarded_message = await destination_channel.send(content=content)
-                        forwarded_image = await destination_channel.send(file=discord.File(io.BytesIO(file_content), filename=attachment.filename, spoiler=attachment.is_spoiler()))
+                            logging.info(f"Forwarded message content to {destination_channel}")
+                        if file_content:
+                            forwarded_image = await destination_channel.send(file=discord.File(io.BytesIO(file_content), filename=attachment.filename, spoiler=attachment.is_spoiler()))
+                            logging.info(f"Forwarded image to {destination_channel}")
 
                         self.forwarded_messages.add(message.id)  # Add message ID to set of forwarded messages
-                except discord.HTTPException:
-                    continue
+                except discord.HTTPException as e:
+                    logging.error(f"Error forwarding message to {destination_channel}: {e}")
         else:
             await asyncio.sleep(3)
             updated_message = await message.channel.fetch_message(message.id)
@@ -75,6 +82,7 @@ class ForwardingBot(discord.Client):
 
     async def on_ready(self):
         self.forward_task.start()
+        logging.info('Bot is ready.')
 
 if __name__ == '__main__':
     keep_alive()  # Call the keep_alive function to start the Flask server
