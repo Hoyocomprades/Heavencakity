@@ -10,9 +10,6 @@ from dotenv import load_dotenv
 load_dotenv()
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 
-# Add the specific versions of Jinja2 and Markupsafe to the requirements.txt file
-# Example: jinja2==2.11.3 markupsafe==2.0.1
-
 # Channel IDs (replace with your actual channel IDs)
 SOURCE_CHANNEL_IDS = [
     863803391239127090,
@@ -28,10 +25,8 @@ DESTINATION_CHANNEL_IDS = [
 class ForwardingBot(discord.Client):
 
     def __init__(self):
-        from discord import Intents
-        intents = Intents.default()
-        intents.message_content = True
-        intents.members = True
+        intents = discord.Intents.default()
+        intents.messages = True  # Enable message intents
         super().__init__(intents=intents)
         self.last_message_ids = {channel_id: None for channel_id in SOURCE_CHANNEL_IDS}
         self.forwarded_messages = set()  # Set to keep track of forwarded message IDs
