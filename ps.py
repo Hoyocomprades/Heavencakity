@@ -10,6 +10,9 @@ from dotenv import load_dotenv
 load_dotenv()
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 
+# Add the specific versions of Jinja2 and Markupsafe to the requirements.txt file
+# Example: jinja2==2.11.3 markupsafe==2.0.1
+
 # Channel IDs (replace with your actual channel IDs)
 SOURCE_CHANNEL_IDS = [
     863803391239127090,
