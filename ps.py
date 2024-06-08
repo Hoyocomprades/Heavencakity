@@ -49,7 +49,7 @@ class ForwardingBot(discord.Client):
                         forwarded_message = await destination_channel.send(content=content)
                     forwarded_image = await destination_channel.send(file=discord.File(io.BytesIO(file_content), filename=attachment.filename, spoiler=attachment.is_spoiler()))
 
-                    self.forwarded_messages[message.id] = (message.channel.id, destination_channel_id)  # Store the forwarded message details
+                    self.forwarded_messages[message.id] = self.forwarded_messages.get(message.id, []) + [(destination_channel_id, forwarded_message.id if content else None, forwarded_image.id)]
                 except discord.HTTPException:
                     continue
         else:
@@ -68,24 +68,26 @@ class ForwardingBot(discord.Client):
             async for message in source_channel.history(limit=1):
                 if self.last_message_ids[source_channel_id] is None or message.id != self.last_message_ids[source_channel_id]:
                     self.last_message_ids[source_channel_id] = message.id
-                    # Check if the message has already been forwarded from another source channel
-                    if message.id not in self.forwarded_messages:
-                        await self.process_message(message)
+                    await self.process_message(message)
 
     async def on_message_delete(self, message):
-        if message.id in self.forwarded_messages:
-            source_channel_id, destination_channel_id = self.forwarded_messages[message.id]
-            if source_channel_id in SOURCE_CHANNEL_IDS:
+        if message.channel.id in SOURCE_CHANNEL_IDS and message.id in self.forwarded_messages:
+            for destination_channel_id, forwarded_message_id, forwarded_image_id in self.forwarded_messages[message.id]:
                 destination_channel = self.get_channel(destination_channel_id)
                 if destination_channel:
                     try:
-                        forwarded_message = await destination_channel.fetch_message(message.id)
-                        await forwarded_message.delete()
+                        if forwarded_message_id:
+                            forwarded_message = await destination_channel.fetch_message(forwarded_message_id)
+                            await forwarded_message.delete()
+                        if forwarded_image_id:
+                            forwarded_image = await destination_channel.fetch_message(forwarded_image_id)
+                            await forwarded_image.delete()
                     except discord.HTTPException:
-                        pass
-                del self.forwarded_messages[message.id]
+                        continue
+            del self.forwarded_messages[message.id]
 
     async def on_ready(self):
+        print(f'Logged in as {self.user}')
         self.forward_task.start()
 
 if __name__ == '__main__':
