@@ -3,6 +3,7 @@ from discord.ext import tasks
 import asyncio
 import os
 import io
+from collections import deque
 from keep_alive import keep_alive  # Import the keep_alive function
 
 # Load environment variable securely (assuming .env file exists)
@@ -35,6 +36,7 @@ class ForwardingBot(discord.Client):
         super().__init__(intents=intents)
         self.last_message_ids = {channel_id: None for channel_id in SOURCE_CHANNEL_IDS}
         self.forwarded_messages = {}  # Dictionary to keep track of forwarded messages
+        self.message_queue = deque()  # Queue to store incoming messages
 
     async def process_message(self, message):
         if message.attachments:
@@ -61,6 +63,13 @@ class ForwardingBot(discord.Client):
             if updated_message.attachments:
                 await self.process_message(updated_message)
 
+    async def queue_processor(self):
+        while True:
+            if self.message_queue:
+                message = self.message_queue.popleft()
+                await self.process_message(message)
+            await asyncio.sleep(1)  # Adjust sleep time if necessary
+
     @tasks.loop(seconds=10)
     async def forward_task(self):
         for source_channel_id in SOURCE_CHANNEL_IDS:
@@ -68,10 +77,10 @@ class ForwardingBot(discord.Client):
             if not source_channel:
                 continue
 
-            async for message in source_channel.history(limit=1):
+            async for message in source_channel.history(limit=5):
                 if self.last_message_ids[source_channel_id] is None or message.id != self.last_message_ids[source_channel_id]:
                     self.last_message_ids[source_channel_id] = message.id
-                    await self.process_message(message)
+                    self.message_queue.append(message)
 
     async def on_message_delete(self, message):
         if message.channel.id in SOURCE_CHANNEL_IDS and message.id in self.forwarded_messages:
@@ -92,6 +101,7 @@ class ForwardingBot(discord.Client):
     async def on_ready(self):
         print(f'Logged in as {self.user}')
         self.forward_task.start()
+        self.loop.create_task(self.queue_processor())
 
 if __name__ == '__main__':
     keep_alive()  # Call the keep_alive function to start the Flask server
