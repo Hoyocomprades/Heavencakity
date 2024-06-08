@@ -27,8 +27,11 @@ class ForwardingBot(discord.Client):
     def __init__(self):
         from discord import Intents
         intents = Intents.default()
-        intents.message_content = True
-        intents.members = True
+        if hasattr(Intents, 'message_content'):
+            intents.message_content = True  # For discord.py v2.0 and later
+        else:
+            intents = Intents.all()  # For earlier versions of discord.py
+        
         super().__init__(intents=intents)
         self.last_message_ids = {channel_id: None for channel_id in SOURCE_CHANNEL_IDS}
         self.forwarded_messages = {}  # Dictionary to keep track of forwarded messages
