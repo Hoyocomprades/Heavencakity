@@ -78,7 +78,8 @@ class ForwardingBot(discord.Client):
                 continue
 
             async for message in source_channel.history(limit=5):
-                if self.last_message_ids[source_channel_id] is None or message.id != self.last_message_ids[source_channel_id]:
+                if (self.last_message_ids[source_channel_id] is None or
+                        message.id > self.last_message_ids[source_channel_id]):
                     self.last_message_ids[source_channel_id] = message.id
                     self.message_queue.append(message)
 
