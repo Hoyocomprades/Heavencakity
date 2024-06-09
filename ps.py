@@ -4,6 +4,7 @@ import asyncio
 import os
 import io
 import time
+import json
 from collections import deque
 from keep_alive import keep_alive  # Import the keep_alive function
 
@@ -24,6 +25,8 @@ DESTINATION_CHANNEL_IDS = [
     1248623054226067577
 ]
 
+LOG_FILE = "sent_messages_log.json"
+
 class ForwardingBot(discord.Client):
 
     def __init__(self):
@@ -33,12 +36,22 @@ class ForwardingBot(discord.Client):
             intents.message_content = True  # For discord.py v2.0 and later
         else:
             intents = Intents.all()  # For earlier versions of discord.py
-        
+
         super().__init__(intents=intents)
         self.last_message_ids = {channel_id: None for channel_id in SOURCE_CHANNEL_IDS}
         self.forwarded_messages = {}  # Dictionary to keep track of forwarded messages
         self.message_queue = deque()  # Queue to store incoming messages
-        self.sent_messages_log = {}  # Dictionary to keep track of sent messages with timestamps
+        self.sent_messages_log = self.load_sent_messages_log()  # Load sent messages log
+
+    def load_sent_messages_log(self):
+        if os.path.exists(LOG_FILE):
+            with open(LOG_FILE, "r") as file:
+                return json.load(file)
+        return {}
+
+    def save_sent_messages_log(self):
+        with open(LOG_FILE, "w") as file:
+            json.dump(self.sent_messages_log, file)
 
     async def process_message(self, message):
         if message.attachments:
@@ -47,10 +60,13 @@ class ForwardingBot(discord.Client):
             file_content = await attachment.read()
             current_time = time.time()
 
+            # Generate attachment hash
+            attachment_hash = hash(file_content)
+
             # Check if a similar message has been sent within the last 24 hours
             if content in self.sent_messages_log:
                 for log_entry in self.sent_messages_log[content]:
-                    if current_time - log_entry["timestamp"] < 86400:  # 86400 seconds = 24 hours
+                    if log_entry["attachment_hash"] == attachment_hash and current_time - log_entry["timestamp"] < 86400:
                         # If a similar message has been sent within the last 24 hours, ignore it
                         return
 
@@ -65,15 +81,16 @@ class ForwardingBot(discord.Client):
                     forwarded_image = await destination_channel.send(file=discord.File(io.BytesIO(file_content), filename=attachment.filename, spoiler=attachment.is_spoiler()))
 
                     self.forwarded_messages[message.id] = self.forwarded_messages.get(message.id, []) + [(destination_channel_id, forwarded_message.id if content else None, forwarded_image.id)]
-                    
+
                     # Log the sent message
                     if content not in self.sent_messages_log:
                         self.sent_messages_log[content] = []
-                    self.sent_messages_log[content].append({"timestamp": current_time, "attachment_hash": attachment.filename})
-                    
+                    self.sent_messages_log[content].append({"timestamp": current_time, "attachment_hash": attachment_hash})
+
                     # Clean up old log entries
                     self.sent_messages_log[content] = [entry for entry in self.sent_messages_log[content] if current_time - entry["timestamp"] < 86400]
-                    
+                    self.save_sent_messages_log()  # Save log to file after each update
+
                 except discord.HTTPException as e:
                     print(f"Failed to forward message {message.id} to {destination_channel_id}: {e}")
         else:
