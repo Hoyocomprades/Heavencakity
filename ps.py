@@ -68,6 +68,8 @@ class ForwardingBot(discord.Client):
             if self.message_queue:
                 message = self.message_queue.popleft()
                 await self.process_message(message)
+                # Update the last processed message ID for the source channel
+                self.last_message_ids[message.channel.id] = message.id
             await asyncio.sleep(1)  # Adjust sleep time if necessary
 
     @tasks.loop(seconds=10)
@@ -80,8 +82,8 @@ class ForwardingBot(discord.Client):
             async for message in source_channel.history(limit=5):
                 if (self.last_message_ids[source_channel_id] is None or
                         message.id > self.last_message_ids[source_channel_id]):
-                    self.last_message_ids[source_channel_id] = message.id
-                    self.message_queue.append(message)
+                    if message.id not in self.forwarded_messages:
+                        self.message_queue.append(message)
 
     async def on_message_delete(self, message):
         if message.channel.id in SOURCE_CHANNEL_IDS and message.id in self.forwarded_messages:
