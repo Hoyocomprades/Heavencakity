@@ -113,4 +113,27 @@ class ForwardingBot(discord.Client):
                 self.last_message_ids[source_channel_id] = message.id  # Update the last processed message ID
 
     async def on_message_delete(self, message):
-        if message.channel.id in SOURCE_CHANNEL_IDS and message.id
+        if message.channel.id in SOURCE_CHANNEL_IDS and message.id in self.forwarded_messages:
+            for destination_channel_id, forwarded_message_id, forwarded_image_id in self.forwarded_messages[message.id]:
+                destination_channel = self.get_channel(destination_channel_id)
+                if destination_channel:
+                    try:
+                        if forwarded_message_id:
+                            forwarded_message = await destination_channel.fetch_message(forwarded_message_id)
+                            await forwarded_message.delete()
+                        if forwarded_image_id:
+                            forwarded_image = await destination_channel.fetch_message(forwarded_image_id)
+                            await forwarded_image.delete()
+                    except discord.HTTPException as e:
+                        print(f"Failed to delete forwarded message {forwarded_message_id} or image {forwarded_image_id}: {e}")
+            del self.forwarded_messages[message.id]
+
+    async def on_ready(self):
+        print(f'Logged in as {self.user}')
+        self.forward_task.start()
+        self.loop.create_task(self.queue_processor())
+
+if __name__ == '__main__':
+    keep_alive()  # Call the keep_alive function to start the Flask server
+    bot = ForwardingBot()
+    bot.run(BOT_TOKEN)
