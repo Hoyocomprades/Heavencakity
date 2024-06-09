@@ -39,6 +39,7 @@ class ForwardingBot(discord.Client):
         self.forwarded_messages = {}  # Dictionary to keep track of forwarded messages
         self.message_queue = deque()  # Queue to store incoming messages
         self.sent_messages_log = {}  # Dictionary to keep track of sent messages with timestamps
+        self.startup_time = time.time()  # Store the bot's startup time
 
     async def process_message(self, message):
         if message.attachments:
@@ -49,7 +50,7 @@ class ForwardingBot(discord.Client):
 
             # Check if the message is within the time gap of the most recently sent message
             if self.last_message_ids[message.channel.id] is not None:
-                last_message_time = self.sent_messages_log.get(self.last_message_ids[message.channel.id], 0)
+                last_message_time = self.sent_messages_log.get(self.last_message_ids[message.channel.id], self.startup_time)
                 if current_time - last_message_time < 86400:  # 86400 seconds = 24 hours
                     return
 
@@ -104,11 +105,8 @@ class ForwardingBot(discord.Client):
             if not source_channel:
                 continue
 
-            # Get the last processed message ID for the source channel
-            last_message_id = self.last_message_ids[source_channel_id]
-
-            # Fetch messages newer than the last processed message in the source channel
-            async for message in source_channel.history(after=discord.Object(id=last_message_id) if last_message_id else None, limit=5):
+            # Fetch messages newer than the bot's startup time in the source channel
+            async for message in source_channel.history(after=self.startup_time, limit=5):
                 self.message_queue.append(message)
                 self.last_message_ids[source_channel_id] = message.id  # Update the last processed message ID
 
