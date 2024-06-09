@@ -1,211 +1,112 @@
-import os
 import discord
-from discord.ext import commands, tasks
 import asyncio
-from datetime import datetime, timedelta
-import json
-from flask import Flask
-from threading import Thread
+import os
+import io
+import time
+from keep_alive import keep_alive  # Import the keep_alive function
+
+# Load environment variable securely (assuming .env file exists)
 from dotenv import load_dotenv
-
 load_dotenv()
+BOT_TOKEN = os.getenv('BOT_TOKEN')
 
-# Define intents
-intents = discord.Intents.default()
-if hasattr(intents, 'message_content'):
-    intents.message_content = True
-else:
-    print("The current version of discord.py does not support 'message_content' intent. Please update to discord.py 2.0 or higher.")
+# Channel IDs (replace with your actual channel IDs)
+SOURCE_CHANNEL_IDS = [
+    1248563358995709962,
+    863803391239127090
+    # Add more source channel IDs here as needed
+]
+DESTINATION_CHANNEL_IDS = [
+    1248563406101942282,
+    1248623054226067577
+]
 
-# Create bot instance
-bot = commands.Bot(command_prefix='!', intents=intents)
+class ForwardingBot(discord.Client):
 
-# Dictionary to store series information
-series_info = {
-    'HDWLK': {
-        'name': 'How Did We Get Here Lee Ji-Kyung',
-        'role_id': 1228968453986324581,
-        'url': 'https://flexscans.com/manga/how-did-we-get-here-lee-ji-kyung/xx'
-    },
-    'OMA': {
-        'name': 'Office Menace Alert',
-        'role_id': 1231220871805538456,
-        'url': 'https://flexscans.com/manga/office-menace-alert/xx'
-    },
-    'PGBM': {
-        'name': 'Playing a Game with my Busty Manager',
-        'role_id': 1228968582445269133,
-        'url': 'https://flexscans.com/manga/playing-a-game-with-my-busty-manager/xx'
-    },
-    'THS': {
-        'name': 'The High Society',
-        'role_id': 1228968673352355930,
-        'url': 'https://flexscans.com/manga/the-high-society/xx'
-    }
-}
+    def __init__(self):
+        super().__init__(intents=discord.Intents.default())
+        self.sent_messages_log = {}  # Dictionary to keep track of sent messages with timestamps and IDs
+        self.startup_time = None  # Variable to store the bot's startup time
 
-# Channel and role IDs
-vip_channel_id = 1228948429019811940
-late_channel_id = 1228948547827925104
-time_remaining_channel_id = 1247835352941596742
-all_series_role_id = 1228965477670457364
-vip_role_id = 1228969150039457833
-ready_channel_id = 1228986706632380416  # Channel for "I am ready!" message
+    async def process_message(self, message):
+        if message.channel.id not in SOURCE_CHANNEL_IDS:
+            return  # Ignore messages from channels that are not in the source channels
 
-ongoing_notifications = []
+        content = message.content.strip() if message.content else ""
+        attachment_content = None
 
-STATE_FILE = 'bot_state.json'
+        if message.attachments:
+            attachment = message.attachments[0]
+            attachment_content = await attachment.read()
 
-def load_state():
-    global ongoing_notifications
-    try:
-        with open(STATE_FILE, 'r') as f:
-            data = json.load(f)
-            ongoing_notifications = [(item['series_abbr'], item['chapter_number'], datetime.fromisoformat(item['release_time'])) for item in data]
-            print("State loaded from file.")
-    except (FileNotFoundError, json.JSONDecodeError) as e:
-        print("No previous state found or error loading state:", e)
+        current_time = int(time.time())
+        message_key = (message.channel.id, content, attachment.filename if attachment else None)
 
-def save_state():
-    with open(STATE_FILE, 'w') as f:
-        data = [{'series_abbr': series_abbr, 'chapter_number': chapter_number, 'release_time': release_time.isoformat()} for series_abbr, chapter_number, release_time in ongoing_notifications]
-        json.dump(data, f)
-        print("State saved to file.")
+        # Check if the message is a duplicate within the last 24 hours
+        if message_key in self.sent_messages_log:
+            last_timestamp = self.sent_messages_log[message_key]['timestamp']
+            if current_time - last_timestamp < 86400:  # 86400 seconds = 24 hours
+                # If a similar message has been sent within the last 24 hours, ignore it
+                return
 
-@bot.event
-async def on_ready():
-    print(f'Bot is ready as {bot.user}')
-    load_state()
-    await adjust_remaining_time()
-    update_time_remaining.start()
-    # Sending a message to indicate bot is ready
-    ready_channel = bot.get_channel(ready_channel_id)
-    if ready_channel:
-        await ready_channel.send("I am ready!")
+        forwarded_messages = []
+        for destination_channel_id in DESTINATION_CHANNEL_IDS:
+            destination_channel = self.get_channel(destination_channel_id)
+            if not destination_channel:
+                continue
 
-@bot.command()
-async def notify(ctx, series_abbr: str, chapter_number: int, duration: int):
-    series = series_info.get(series_abbr.upper())
-    if not series:
-        await ctx.send("Series not found.")
-        return
+            try:
+                if content:
+                    forwarded_message = await destination_channel.send(content=content)
+                    forwarded_messages.append(forwarded_message.id)
+                if attachment_content:
+                    # Always send the attachment as a spoiler
+                    forwarded_attachment = await destination_channel.send(file=discord.File(io.BytesIO(attachment_content), filename=f"SPOILER_{attachment.filename}"))
+                    forwarded_messages.append(forwarded_attachment.id)
 
-    # Send message to VIP channel
-    vip_message = f"**{series['name']}** chapter **{chapter_number}** has been released for <@&{vip_role_id}>."
-    vip_channel = bot.get_channel(vip_channel_id)
-    await vip_channel.send(vip_message)
+                # Log the sent message timestamp and forwarded message IDs
+                self.sent_messages_log[message_key] = {'timestamp': current_time, 'forwarded_messages': forwarded_messages}
+                    
+            except discord.HTTPException as e:
+                print(f"Failed to forward message to {destination_channel_id}: {e}")
 
-    release_time = datetime.utcnow() + timedelta(hours=duration)
-    ongoing_notifications.append((series_abbr.upper(), chapter_number, release_time))
-    save_state()
+    async def process_deleted_message(self, message):
+        # Delete corresponding messages from target channels when a message is deleted from source channel
+        content = message.content.strip() if message.content else ""
+        attachment_filename = message.attachments[0].filename if message.attachments else None
+        message_key = (message.channel.id, content, attachment_filename)
 
-    await ctx.send(f"Notification scheduled for {series['name']} chapter {chapter_number}.")
+        if message_key in self.sent_messages_log:
+            forwarded_messages = self.sent_messages_log[message_key]['forwarded_messages']
+            for destination_channel_id in DESTINATION_CHANNEL_IDS:
+                destination_channel = self.get_channel(destination_channel_id)
+                if not destination_channel:
+                    continue
 
-@bot.command()
-async def release(ctx, series_abbr: str, chapter_number: int):
-    series = series_info.get(series_abbr.upper())
-    if not series:
-        await ctx.send("Series not found.")
-        return
+                try:
+                    for forwarded_message_id in forwarded_messages:
+                        forwarded_message = await destination_channel.fetch_message(forwarded_message_id)
+                        await forwarded_message.delete()
 
-    late_channel = bot.get_channel(late_channel_id)
-    late_message = (
-        f"<@&{all_series_role_id}> <@&{series['role_id']}>\n"
-        f"**{series['name']}** chapter **{chapter_number}** has been released!\n"
-        f"{series['url'].replace('xx', str(chapter_number))}"
-    )
-    await late_channel.send(late_message)
-    await ctx.send(f"Release message sent for {series['name']} chapter {chapter_number}.")
+                except discord.HTTPException as e:
+                    print(f"Failed to delete message from {destination_channel_id}: {e}")
 
-async def adjust_remaining_time():
-    now = datetime.utcnow()
-    time_remaining_channel = bot.get_channel(time_remaining_channel_id)
-    async for message in time_remaining_channel.history(limit=1):
-        # Assuming the message format is consistent, we extract the remaining time
-        content = message.content
-        for series_abbr, chapter_number, release_time in ongoing_notifications:
-            series = series_info[series_abbr]
-            if f"**{series['name']}** chapter **{chapter_number}** releases in" in content:
-                time_left_str = content.split('releases in ')[1]
-                hours, minutes = map(int, time_left_str.split('h ')[0]), int(time_left_str.split('h ')[1].split('m')[0])
-                offline_duration = now - message.created_at
-                remaining_time = timedelta(hours=hours, minutes=minutes) - offline_duration
-                new_release_time = now + remaining_time
-                ongoing_notifications.append((series_abbr, chapter_number, new_release_time))
-                ongoing_notifications.remove((series_abbr, chapter_number, release_time))
-                break
+            # Remove the entry from the log
+            del self.sent_messages_log[message_key]
 
-@tasks.loop(minutes=1)
-async def update_time_remaining():
-    now = datetime.utcnow()
-    new_ongoing_notifications = []
+    async def on_message(self, message):
+        # Process the message
+        await self.process_message(message)
 
-    time_remaining_channel = bot.get_channel(time_remaining_channel_id)
-    
-    # Purge old messages if we have the manage_messages permission
-    try:
-        await time_remaining_channel.purge()
-    except discord.Forbidden:
-        print("Bot lacks permission to manage messages in the time remaining channel.")
+    async def on_message_delete(self, message):
+        # Process the deleted message
+        await self.process_deleted_message(message)
 
-    for series_abbr, chapter_number, release_time in ongoing_notifications:
-        series = series_info[series_abbr]
-        if now >= release_time:
-            late_channel = bot.get_channel(late_channel_id)
-            late_message = (
-                f"<@&{all_series_role_id}> <@&{series['role_id']}>\n"
-                f"**{series['name']}** chapter **{chapter_number}** has been released!\n"
-                f"{series['url'].replace('xx', str(chapter_number))}"
-            )
-            await late_channel.send(late_message)
-        else:
-            new_ongoing_notifications.append((series_abbr, chapter_number, release_time))
-            remaining_time = release_time - now
-            hours, remainder = divmod(int(remaining_time.total_seconds()), 3600)
-            minutes = remainder // 60
-            time_remaining_message = (
-                f"**{series['name']}** chapter **{chapter_number}** releases in "
-                f"{hours}h {minutes}m"
-            )
-            await time_remaining_channel.send(time_remaining_message)
+    async def on_ready(self):
+        print(f'Logged in as {self.user}')
+        self.startup_time = int(time.time())  # Store the bot's startup time
 
-    ongoing_notifications[:] = new_ongoing_notifications
-    save_state()
-
-@bot.event
-async def on_message(message):
-    if message.channel.id == ready_channel_id and message.content.startswith('!notify'):
-        await bot.process_commands(message)
-    elif message.channel.id == ready_channel_id and message.content.startswith('!release'):
-        await bot.process_commands(message)
-    else:
-        await bot.process_commands(message)
-
-# Flask app to keep the hosting service alive
-app = Flask(__name__)
-
-@app.route('/')
-def home():
-    return "I'm alive"
-
-def run():
-    app.run(host='0.0.0.0', port=8081)
-
-def keep_alive():
-    t = Thread(target=run)
-    t.start()
-
-# Reconnection mechanism
-async def start_bot():
-    while True:
-        try:
-            await bot.start(os.getenv('BOT_TOKEN'))
-        except Exception as e:
-            print(f"Bot disconnected due to {e}, reconnecting in 5 seconds...")
-            await asyncio.sleep(5)
-
-# Call keep_alive to start the Flask app
-keep_alive()
-
-# Start the bot
-asyncio.run(start_bot())
+if __name__ == '__main__':
+    keep_alive()  # Call the keep_alive function to start the Flask server
+    bot = ForwardingBot()
+    bot.run(BOT_TOKEN)
