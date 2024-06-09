@@ -14,11 +14,13 @@ BOT_TOKEN = os.getenv('BOT_TOKEN')
 
 # Channel IDs (replace with your actual channel IDs)
 SOURCE_CHANNEL_IDS = [
+    863803391239127090,
     1248563358995709962
     # Add more source channel IDs here as needed
 ]
 DESTINATION_CHANNEL_IDS = [
     1248563406101942282,
+    1248574132417724518,
     1248623054226067577
 ]
 
@@ -106,32 +108,9 @@ class ForwardingBot(discord.Client):
             last_message_id = self.last_message_ids[source_channel_id]
 
             # Fetch messages newer than the last processed message in the source channel
-            async for message in source_channel.history(after=discord.Object(id=last_message_id), limit=5):
+            async for message in source_channel.history(after=discord.Object(id=last_message_id) if last_message_id else None, limit=5):
                 self.message_queue.append(message)
                 self.last_message_ids[source_channel_id] = message.id  # Update the last processed message ID
 
     async def on_message_delete(self, message):
-        if message.channel.id in SOURCE_CHANNEL_IDS and message.id in self.forwarded_messages:
-            for destination_channel_id, forwarded_message_id, forwarded_image_id in self.forwarded_messages[message.id]:
-                destination_channel = self.get_channel(destination_channel_id)
-                if destination_channel:
-                    try:
-                        if forwarded_message_id:
-                            forwarded_message = await destination_channel.fetch_message(forwarded_message_id)
-                            await forwarded_message.delete()
-                        if forwarded_image_id:
-                            forwarded_image = await destination_channel.fetch_message(forwarded_image_id)
-                            await forwarded_image.delete()
-                    except discord.HTTPException as e:
-                        print(f"Failed to delete forwarded message {forwarded_message_id} or image {forwarded_image_id}: {e}")
-            del self.forwarded_messages[message.id]
-
-    async def on_ready(self):
-        print(f'Logged in as {self.user}')
-        self.forward_task.start()
-        self.loop.create_task(self.queue_processor())
-
-if __name__ == '__main__':
-    keep_alive()  # Call the keep_alive function to start the Flask server
-    bot = ForwardingBot()
-    bot.run(BOT_TOKEN)
+        if message.channel.id in SOURCE_CHANNEL_IDS and message.id
