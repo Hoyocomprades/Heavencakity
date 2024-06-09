@@ -24,8 +24,8 @@ DESTINATION_CHANNEL_IDS = [
 class ForwardingBot(discord.Client):
 
     def __init__(self):
-        super().__init__()
-        self.sent_messages_log = {}  # Dictionary to keep track of sent messages with timestamps
+        super().__init__(intents=discord.Intents.default())
+        self.sent_messages_log = {}  # Dictionary to keep track of sent messages with timestamps and IDs
         self.startup_time = None  # Variable to store the bot's startup time
 
     async def process_message(self, message):
@@ -40,15 +40,16 @@ class ForwardingBot(discord.Client):
             attachment_content = await attachment.read()
 
         current_time = int(time.time())
-        message_key = (message.channel.id, content, attachment_content)
+        message_key = (message.channel.id, content, attachment.filename if attachment else None)
 
         # Check if the message is a duplicate within the last 24 hours
         if message_key in self.sent_messages_log:
-            last_timestamp = self.sent_messages_log[message_key]
+            last_timestamp = self.sent_messages_log[message_key]['timestamp']
             if current_time - last_timestamp < 86400:  # 86400 seconds = 24 hours
                 # If a similar message has been sent within the last 24 hours, ignore it
                 return
 
+        forwarded_messages = []
         for destination_channel_id in DESTINATION_CHANNEL_IDS:
             destination_channel = self.get_channel(destination_channel_id)
             if not destination_channel:
@@ -56,36 +57,41 @@ class ForwardingBot(discord.Client):
 
             try:
                 if content:
-                    await destination_channel.send(content=content)
+                    forwarded_message = await destination_channel.send(content=content)
+                    forwarded_messages.append(forwarded_message.id)
                 if attachment_content:
-                    await destination_channel.send(file=discord.File(io.BytesIO(attachment_content), filename=attachment.filename, spoiler=attachment.is_spoiler()))
+                    forwarded_attachment = await destination_channel.send(file=discord.File(io.BytesIO(attachment_content), filename=attachment.filename, spoiler=attachment.is_spoiler()))
+                    forwarded_messages.append(forwarded_attachment.id)
 
-                # Log the sent message timestamp
-                self.sent_messages_log[message_key] = current_time
+                # Log the sent message timestamp and forwarded message IDs
+                self.sent_messages_log[message_key] = {'timestamp': current_time, 'forwarded_messages': forwarded_messages}
                     
             except discord.HTTPException as e:
                 print(f"Failed to forward message to {destination_channel_id}: {e}")
 
-    async def process_deleted_message(self, message_id):
+    async def process_deleted_message(self, message):
         # Delete corresponding messages from target channels when a message is deleted from source channel
-        for message_key, timestamp in list(self.sent_messages_log.items()):
-            if message_key[0] in SOURCE_CHANNEL_IDS:
-                if message_id == message_key[0]:
-                    for destination_channel_id in DESTINATION_CHANNEL_IDS:
-                        destination_channel = self.get_channel(destination_channel_id)
-                        if not destination_channel:
-                            continue
+        content = message.content.strip() if message.content else ""
+        attachment_filename = message.attachments[0].filename if message.attachments else None
+        message_key = (message.channel.id, content, attachment_filename)
 
-                        try:
-                            # Fetch the corresponding message and delete it
-                            await destination_channel.delete_message(message_key[1])
-                            if message_key[2]:  # If there's an attachment, delete it as well
-                                await destination_channel.delete_message(message_key[2])
+        if message_key in self.sent_messages_log:
+            forwarded_messages = self.sent_messages_log[message_key]['forwarded_messages']
+            for destination_channel_id in DESTINATION_CHANNEL_IDS:
+                destination_channel = self.get_channel(destination_channel_id)
+                if not destination_channel:
+                    continue
 
-                            # Remove the entry from the log
-                            del self.sent_messages_log[message_key]
-                        except discord.HTTPException as e:
-                            print(f"Failed to delete message from {destination_channel_id}: {e}")
+                try:
+                    for forwarded_message_id in forwarded_messages:
+                        forwarded_message = await destination_channel.fetch_message(forwarded_message_id)
+                        await forwarded_message.delete()
+
+                except discord.HTTPException as e:
+                    print(f"Failed to delete message from {destination_channel_id}: {e}")
+
+            # Remove the entry from the log
+            del self.sent_messages_log[message_key]
 
     async def on_message(self, message):
         # Process the message
@@ -93,7 +99,7 @@ class ForwardingBot(discord.Client):
 
     async def on_message_delete(self, message):
         # Process the deleted message
-        await self.process_deleted_message(message.id)
+        await self.process_deleted_message(message)
 
     async def on_ready(self):
         print(f'Logged in as {self.user}')
