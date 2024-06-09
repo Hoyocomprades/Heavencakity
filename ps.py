@@ -88,14 +88,14 @@ class ForwardingBot(discord.Client):
             updated_message = await message.channel.fetch_message(message.id)
             if updated_message.attachments:
                 await self.process_message(updated_message)
+        # Update the last processed message ID for the source channel
+        self.last_message_ids[message.channel.id] = message.id
 
     async def queue_processor(self):
         while True:
             if self.message_queue:
                 message = self.message_queue.popleft()
                 await self.process_message(message)
-                # Update the last processed message ID for the source channel
-                self.last_message_ids[message.channel.id] = message.id
             await asyncio.sleep(1)  # Adjust sleep time if necessary
 
     @tasks.loop(seconds=10)
@@ -108,7 +108,6 @@ class ForwardingBot(discord.Client):
             # Fetch messages newer than the last processed message ID for the source channel
             async for message in source_channel.history(after=discord.Object(id=self.last_message_ids[source_channel_id]), limit=5):
                 self.message_queue.append(message)
-                self.last_message_ids[source_channel_id] = message.id  # Update the last processed message ID
 
     async def on_message_delete(self, message):
         if message.channel.id in SOURCE_CHANNEL_IDS and message.id in self.forwarded_messages:
