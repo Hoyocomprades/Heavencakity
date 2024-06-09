@@ -12,13 +12,11 @@ BOT_TOKEN = os.getenv('BOT_TOKEN')
 
 # Channel IDs (replace with your actual channel IDs)
 SOURCE_CHANNEL_IDS = [
-    863803391239127090,
     1248563358995709962
     # Add more source channel IDs here as needed
 ]
 DESTINATION_CHANNEL_IDS = [
     1248563406101942282,
-    1248574132417724518,
     1248623054226067577
 ]
 
