@@ -106,8 +106,11 @@ class ForwardingBot(discord.Client):
                 continue
 
             # Fetch messages newer than the last processed message ID for the source channel
-            async for message in source_channel.history(after=discord.Object(id=self.last_message_ids[source_channel_id]), limit=5):
+            after_message_id = self.last_message_ids.get(source_channel_id)
+            async for message in source_channel.history(after=discord.Object(id=after_message_id) if after_message_id else None, limit=5):
                 self.message_queue.append(message)
+                # Update the last processed message ID for the source channel
+                self.last_message_ids[source_channel_id] = message.id
 
     async def on_message_delete(self, message):
         if message.channel.id in SOURCE_CHANNEL_IDS and message.id in self.forwarded_messages:
