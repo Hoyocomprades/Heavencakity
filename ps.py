@@ -30,39 +30,39 @@ class ForwardingBot(discord.Client):
         self.startup_time = None  # Variable to store the bot's startup time
 
     async def process_message(self, message):
-        content = message.content.strip() if message.content else ""
-        attachment_content = None
-
         if message.attachments:
+            content = message.content.strip() if message.content else ""
             attachment = message.attachments[0]
-            attachment_content = await attachment.read()
+            file_content = await attachment.read()
+            current_time = int(time.time())
 
-        current_time = int(time.time())
-        message_key = (content, attachment_content)
+            # Check if the message is a duplicate within the last 24 hours
+            if content in self.sent_messages_log:
+                for log_entry in self.sent_messages_log[content]:
+                    if current_time - log_entry < 86400:  # 86400 seconds = 24 hours
+                        # If a similar message has been sent within the last 24 hours, ignore it
+                        return
 
-        # Check if the message is a duplicate within the last 24 hours
-        if message_key in self.sent_messages_log:
-            last_timestamp = self.sent_messages_log[message_key]
-            if current_time - last_timestamp < 86400:  # 86400 seconds = 24 hours
-                # If a similar message has been sent within the last 24 hours, ignore it
-                return
+            for destination_channel_id in DESTINATION_CHANNEL_IDS:
+                destination_channel = self.get_channel(destination_channel_id)
+                if not destination_channel:
+                    continue
 
-        for destination_channel_id in DESTINATION_CHANNEL_IDS:
-            destination_channel = self.get_channel(destination_channel_id)
-            if not destination_channel:
-                continue
+                try:
+                    if content:
+                        await destination_channel.send(content=content)
+                    await destination_channel.send(file=discord.File(io.BytesIO(file_content), filename=attachment.filename, spoiler=attachment.is_spoiler()))
 
-            try:
-                if content:
-                    await destination_channel.send(content=content)
-                if attachment_content:
-                    await destination_channel.send(file=discord.File(io.BytesIO(attachment_content), filename=attachment.filename, spoiler=attachment.is_spoiler()))
-
-                # Log the sent message timestamp
-                self.sent_messages_log[message_key] = current_time
+                    # Log the sent message timestamp
+                    if content not in self.sent_messages_log:
+                        self.sent_messages_log[content] = []
+                    self.sent_messages_log[content].append(current_time)
                     
-            except discord.HTTPException as e:
-                print(f"Failed to forward message to {destination_channel_id}: {e}")
+                    # Clean up old log entries
+                    self.sent_messages_log[content] = [entry for entry in self.sent_messages_log[content] if current_time - entry < 86400]
+                    
+                except discord.HTTPException as e:
+                    print(f"Failed to forward message to {destination_channel_id}: {e}")
 
     async def on_message(self, message):
         # Process the message
