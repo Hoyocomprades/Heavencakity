@@ -14,11 +14,13 @@ BOT_TOKEN = os.getenv('BOT_TOKEN')
 
 # Channel IDs (replace with your actual channel IDs)
 SOURCE_CHANNEL_IDS = [
+    863803391239127090,
     1248563358995709962
     # Add more source channel IDs here as needed
 ]
 DESTINATION_CHANNEL_IDS = [
     1248563406101942282,
+    1248574132417724518,
     1248623054226067577
 ]
 
@@ -102,12 +104,13 @@ class ForwardingBot(discord.Client):
             if not source_channel:
                 continue
 
-            async for message in source_channel.history(limit=5):
-                if (self.last_message_ids[source_channel_id] is None or
-                        message.id > self.last_message_ids[source_channel_id]):
-                    if message.id not in self.forwarded_messages:
-                        self.message_queue.append(message)
-                        self.last_message_ids[source_channel_id] = message.id  # Update the last processed message ID
+            # Get the last processed message ID for the source channel
+            last_message_id = self.last_message_ids[source_channel_id]
+
+            # Fetch messages newer than the last processed message in the source channel
+            async for message in source_channel.history(after=discord.Object(id=last_message_id), limit=5):
+                self.message_queue.append(message)
+                self.last_message_ids[source_channel_id] = message.id  # Update the last processed message ID
 
     async def on_message_delete(self, message):
         if message.channel.id in SOURCE_CHANNEL_IDS and message.id in self.forwarded_messages:
