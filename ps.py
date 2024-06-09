@@ -105,8 +105,8 @@ class ForwardingBot(discord.Client):
             if not source_channel:
                 continue
 
-            # Fetch messages newer than the last processed message in the source channel
-            async for message in source_channel.history(after=None if self.startup_time is None else discord.Object(id=int(self.startup_time)), limit=5):
+            # Fetch messages newer than the bot's startup time
+            async for message in source_channel.history(after=discord.Object(id=int(self.startup_time)), limit=5):
                 self.message_queue.append(message)
                 self.last_message_ids[source_channel_id] = message.id  # Update the last processed message ID
 
