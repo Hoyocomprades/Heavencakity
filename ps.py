@@ -55,8 +55,8 @@ class ForwardingBot(discord.Client):
                     forwarded_image = await destination_channel.send(file=discord.File(io.BytesIO(file_content), filename=attachment.filename, spoiler=attachment.is_spoiler()))
 
                     self.forwarded_messages[message.id] = self.forwarded_messages.get(message.id, []) + [(destination_channel_id, forwarded_message.id if content else None, forwarded_image.id)]
-                except discord.HTTPException:
-                    continue
+                except discord.HTTPException as e:
+                    print(f"Failed to forward message {message.id} to {destination_channel_id}: {e}")
         else:
             await asyncio.sleep(3)
             updated_message = await message.channel.fetch_message(message.id)
@@ -84,6 +84,7 @@ class ForwardingBot(discord.Client):
                         message.id > self.last_message_ids[source_channel_id]):
                     if message.id not in self.forwarded_messages:
                         self.message_queue.append(message)
+                        self.last_message_ids[source_channel_id] = message.id  # Update the last processed message ID
 
     async def on_message_delete(self, message):
         if message.channel.id in SOURCE_CHANNEL_IDS and message.id in self.forwarded_messages:
@@ -97,8 +98,8 @@ class ForwardingBot(discord.Client):
                         if forwarded_image_id:
                             forwarded_image = await destination_channel.fetch_message(forwarded_image_id)
                             await forwarded_image.delete()
-                    except discord.HTTPException:
-                        continue
+                    except discord.HTTPException as e:
+                        print(f"Failed to delete forwarded message {forwarded_message_id} or image {forwarded_image_id}: {e}")
             del self.forwarded_messages[message.id]
 
     async def on_ready(self):
