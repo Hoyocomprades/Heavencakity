@@ -33,14 +33,8 @@ class ForwardingBot(discord.Client):
             return  # Ignore messages from channels that are not in the source channels
 
         content = message.content.strip() if message.content else ""
-        attachment_content = None
-
-        if message.attachments:
-            attachment = message.attachments[0]
-            attachment_content = await attachment.read()
-
         current_time = int(time.time())
-        message_key = (message.channel.id, content, attachment.filename if attachment else None)
+        message_key = (message.channel.id, content, None)
 
         # Check if the message is a duplicate within the last 24 hours
         if message_key in self.sent_messages_log:
@@ -49,7 +43,9 @@ class ForwardingBot(discord.Client):
                 # If a similar message has been sent within the last 24 hours, ignore it
                 return
 
+        is_new_toon = "new toon" in content.lower()
         forwarded_messages = []
+
         for destination_channel_id in DESTINATION_CHANNEL_IDS:
             destination_channel = self.get_channel(destination_channel_id)
             if not destination_channel:
@@ -59,10 +55,18 @@ class ForwardingBot(discord.Client):
                 if content:
                     forwarded_message = await destination_channel.send(content=content)
                     forwarded_messages.append(forwarded_message.id)
-                if attachment_content:
-                    # Always send the attachment as a spoiler
-                    forwarded_attachment = await destination_channel.send(file=discord.File(io.BytesIO(attachment_content), filename=f"SPOILER_{attachment.filename}"))
-                    forwarded_messages.append(forwarded_attachment.id)
+
+                if message.attachments:
+                    if is_new_toon:
+                        for attachment in message.attachments:
+                            attachment_content = await attachment.read()
+                            forwarded_attachment = await destination_channel.send(file=discord.File(io.BytesIO(attachment_content), filename=f"SPOILER_{attachment.filename}"))
+                            forwarded_messages.append(forwarded_attachment.id)
+                    else:
+                        attachment = message.attachments[0]
+                        attachment_content = await attachment.read()
+                        forwarded_attachment = await destination_channel.send(file=discord.File(io.BytesIO(attachment_content), filename=f"SPOILER_{attachment.filename}"))
+                        forwarded_messages.append(forwarded_attachment.id)
 
                 # Log the sent message timestamp and forwarded message IDs
                 self.sent_messages_log[message_key] = {'timestamp': current_time, 'forwarded_messages': forwarded_messages}
@@ -71,7 +75,7 @@ class ForwardingBot(discord.Client):
                 print(f"Failed to forward message to {destination_channel_id}: {e}")
 
     async def process_deleted_message(self, message):
-        # Delete corresponding messages from target channels when a message is deleted from source channel
+        # Delete corresponding messages from target channels when a message is deleted from the source channel
         content = message.content.strip() if message.content else ""
         attachment_filename = message.attachments[0].filename if message.attachments else None
         message_key = (message.channel.id, content, attachment_filename)
