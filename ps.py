@@ -147,7 +147,7 @@ class ForwardingBot(commands.Cog):
             await role_notify_channel.send(f"{series_name} ({series_abbreviation}) chapter {chapter_number} has been released for <@&{role_id}>")
 
         # Notify in the specific series channel
-        series_channel = self.bot.get_channel(ROLE_IDS[series_abbreviation])
+        series_channel = self.bot.get_channel(role_id)
         if series_channel:
             await series_channel.send(f"{series_name} ({series_abbreviation}) Chapter {chapter_number} has been released <@&{role_id}>")
 
