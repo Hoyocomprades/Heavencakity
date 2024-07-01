@@ -3,15 +3,12 @@ from discord.ext import commands, tasks
 import asyncio
 import os
 import io
-from keep_alive import keep_alive  # Import the keep_alive function
+from dotenv import load_dotenv
+from keep_alive import keep_alive  # Assuming you have a Flask server for keeping bot alive
 import logging
 
-# Load environment variable securely (assuming .env file exists)
-from dotenv import load_dotenv
 load_dotenv()
 BOT_TOKEN = os.getenv('BOT_TOKEN')
-
-print(f"Loaded BOT_TOKEN: {BOT_TOKEN}")
 
 # Channel IDs (replace with your actual channel IDs)
 SOURCE_CHANNEL_IDS = [
@@ -172,7 +169,7 @@ class ForwardingBot(commands.Cog):
 bot.add_cog(ForwardingBot(bot))
 
 if __name__ == '__main__':
-    keep_alive()  # Call the keep_alive function to start the Flask server
+    keep_alive()  # Start the Flask server
     try:
         bot.run(BOT_TOKEN)
     except discord.HTTPException as e:
