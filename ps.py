@@ -61,6 +61,21 @@ class ForwardingBot(commands.Cog):
         self.forwarded_messages = {}  # Dictionary to keep track of forwarded messages
         self.forward_task.start()
 
+    @tasks.loop(seconds=10)
+    async def forward_task(self):
+        await self.bot.wait_until_ready()  # Wait until the bot is fully ready
+        for source_channel_id in SOURCE_CHANNEL_IDS:
+            source_channel = self.bot.get_channel(source_channel_id)
+            if not source_channel:
+                continue
+
+            async for message in source_channel.history(limit=1):
+                if self.last_message_ids[source_channel_id] is None or message.id != self.last_message_ids[source_channel_id]:
+                    self.last_message_ids[source_channel_id] = message.id
+                    # Check if the message has already been forwarded from another source channel
+                    if message.id not in self.forwarded_messages:
+                        await self.process_message(message)
+
     async def process_message(self, message):
         if message.attachments:
             content = message.content.strip() if message.content else ""
@@ -89,20 +104,6 @@ class ForwardingBot(commands.Cog):
             updated_message = await message.channel.fetch_message(message.id)
             if updated_message.attachments:
                 await self.process_message(updated_message)
-
-    @tasks.loop(seconds=10)
-    async def forward_task(self):
-        for source_channel_id in SOURCE_CHANNEL_IDS:
-            source_channel = self.bot.get_channel(source_channel_id)
-            if not source_channel:
-                continue
-
-            async for message in source_channel.history(limit=1):
-                if self.last_message_ids[source_channel_id] is None or message.id != self.last_message_ids[source_channel_id]:
-                    self.last_message_ids[source_channel_id] = message.id
-                    # Check if the message has already been forwarded from another source channel
-                    if message.id not in self.forwarded_messages:
-                        await self.process_message(message)
 
     @commands.Cog.listener()
     async def on_message_delete(self, message):
