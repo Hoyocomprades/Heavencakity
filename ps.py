@@ -28,7 +28,7 @@ DESTINATION_CHANNEL_IDS = [
 NOTIFY_CHANNEL_ID = 1228948429019811940
 ROLE_IDS_CHANNEL_ID = 1228948547827925104
 COMMAND_CHANNEL_ID = 1228986706632380416
-RELEASE_CHANNEL_ID = 1251215367532183562
+RELEASES_CHANNEL_ID = 1251215367532183562
 
 ROLE_IDS = {
     'THS': 1228968673352355930,
@@ -49,7 +49,7 @@ MENTION_IDS = [1236547725747556392, 1228969150039457833]
 logging.basicConfig(level=logging.DEBUG)
 
 intents = discord.Intents.default()
-intents.message_content = True
+intents.messages = True
 intents.members = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
@@ -139,20 +139,18 @@ class ForwardingBot(commands.Cog):
         notify_channel = self.bot.get_channel(NOTIFY_CHANNEL_ID)
         if notify_channel:
             mention_str = " ".join([f"<@&{mention_id}>" for mention_id in MENTION_IDS])
-            await notify_channel.send(f"{series_name} ({series_abbreviation}) has been released for {mention_str} {shorturl}")
+            await notify_channel.send(f"{series_name} ({series_abbreviation}) has been released for {mention_str} - {shorturl}")
 
-        # Notify in the specific series channel
-        series_channel = self.bot.get_channel(role_id)
-        if series_channel:
-            await series_channel.send(f"{series_name} ({series_abbreviation}) Chapter {chapter_number} has been released <@&{role_id}> {shorturl}")
-
-        # Forward to release channel
-        release_channel = self.bot.get_channel(RELEASE_CHANNEL_ID)
-        if release_channel:
-            await release_channel.send(f"{series_name} ({series_abbreviation}) Chapter {chapter_number} {shorturl}")
+        # Notify in the releases channel
+        releases_channel = self.bot.get_channel(RELEASES_CHANNEL_ID)
+        if releases_channel:
+            await releases_channel.send(f"{series_name} ({series_abbreviation}) Chapter {chapter_number} - {shorturl}")
 
     @commands.command(name='release')
     async def release_command(self, ctx, series_abbreviation: str, chapter_number: int, shorturl: str):
+        if ctx.channel.id != COMMAND_CHANNEL_ID:
+            return
+
         if series_abbreviation not in SERIES_NAMES or series_abbreviation not in ROLE_IDS:
             await ctx.send(f"Unknown series abbreviation: {series_abbreviation}")
             return
@@ -163,12 +161,12 @@ class ForwardingBot(commands.Cog):
         # Notify in the specific series channel
         series_channel = self.bot.get_channel(role_id)
         if series_channel:
-            await series_channel.send(f"{series_name} ({series_abbreviation}) Chapter {chapter_number} has been released <@&{role_id}> {shorturl}")
+            await series_channel.send(f"{series_name} ({series_abbreviation}) Chapter {chapter_number} has been released <@&{role_id}> - {shorturl}")
 
-        # Forward to release channel
-        release_channel = self.bot.get_channel(RELEASE_CHANNEL_ID)
-        if release_channel:
-            await release_channel.send(f"{series_name} ({series_abbreviation}) Chapter {chapter_number} {shorturl}")
+        # Notify in the releases channel
+        releases_channel = self.bot.get_channel(RELEASES_CHANNEL_ID)
+        if releases_channel:
+            await releases_channel.send(f"{series_name} ({series_abbreviation}) Chapter {chapter_number} - {shorturl}")
 
 bot.add_cog(ForwardingBot(bot))
 
